@@ -1,0 +1,18 @@
+---
+id: 0
+name: Testnet deployment
+network: testnet
+stacks-node: "https://api.testnet.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: simple-waifu-pool-test-2
+            expected-sender: ST1WVZNYKMK1MS2V2B728ZWJ2C76TAN49C6HSY7JF
+            cost: 63700
+            path: contracts/simple-waifu-poll.clar
+            anchor-block-only: true
+            clarity-version: 3
+      epoch: "3.2"

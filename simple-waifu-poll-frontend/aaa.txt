@@ -1,0 +1,1896 @@
+
+==================================================
+EXTRACTED FULL CODEBASE (BACKEND + FRONTEND)
+Generated on: Sun Aug 10 14:28:57 WIB 2025
+==================================================
+
+
+==================================================
+SECTION: BACKEND (Rust) (simple-waifu-poll-frontend)
+==================================================
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/eslint.config.js
+// ========================================
+
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import tseslint from 'typescript-eslint'
+import { globalIgnores } from 'eslint/config'
+
+export default tseslint.config([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.recommended,
+      reactHooks.configs['recommended-latest'],
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+    },
+  },
+])
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/package.json
+// ========================================
+
+{
+  "name": "simple-waifu-poll-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@stacks/connect": "^8.1.9",
+    "@stacks/network": "^7.2.0",
+    "@stacks/transactions": "^7.2.0",
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/node": "^24.2.1",
+    "bignumber.js": "^9.3.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwindcss": "^4.1.11"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.32.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.39.0",
+    "vite": "^7.1.0"
+  }
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/App.css
+// ========================================
+
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/App.tsx
+// ========================================
+
+import { CreatePollForm } from "@/components/CreatePollForm";
+import { PollCard } from "@/components/PollCard";
+import {
+  getCurrentBlockHeight,
+  getPoll,
+  getUserVote,
+  type Poll,
+  type UserVote,
+} from "@/lib/poll-contract";
+import { abbreviateAddress, formatStx } from "@/lib/stx-utils";
+import { usePolling } from "@/hooks/usePolling";
+import { useEffect, useState } from "react";
+
+export default function App() {
+  const {
+    userData,
+    stxBalance,
+    connectWallet,
+    disconnectWallet,
+    handleCreatePoll,
+    handleVote,
+    handleFinalizePoll,
+  } = usePolling();
+
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [userVotes, setUserVotes] = useState<Record<number, UserVote>>({});
+  const [currentBlock, setCurrentBlock] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"browse" | "create">("browse");
+  const [pollIdToView, setPollIdToView] = useState("");
+
+  // Load polls data
+  const loadPolls = async () => {
+    try {
+      setLoading(true);
+      const blockHeight = await getCurrentBlockHeight();
+      setCurrentBlock(blockHeight);
+
+      // For demo, try to load polls 0-9 (you can adjust this)
+      const pollPromises = Array.from({ length: 10 }, (_, i) => getPoll(i));
+      const pollResults = await Promise.all(pollPromises);
+      const validPolls = pollResults.filter(
+        (poll): poll is Poll => poll !== null,
+      );
+
+      setPolls(validPolls);
+
+      // Load user votes if connected
+      if (userData) {
+        const address = userData.profile.stxAddress.testnet;
+        const votePromises = validPolls.map((poll) =>
+          getUserVote(poll.id, address).then((vote) => ({
+            pollId: poll.id,
+            vote,
+          })),
+        );
+        const voteResults = await Promise.all(votePromises);
+        const votesMap: Record<number, UserVote> = {};
+        voteResults.forEach(({ pollId, vote }) => {
+          votesMap[pollId] = vote;
+        });
+        setUserVotes(votesMap);
+      }
+    } catch (error) {
+      console.error("Error loading polls:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load specific poll by ID
+  const loadSpecificPoll = async (pollId: number) => {
+    try {
+      const poll = await getPoll(pollId);
+      if (poll) {
+        setPolls((prev) => {
+          const exists = prev.some((p) => p.id === pollId);
+          if (exists) {
+            return prev.map((p) => (p.id === pollId ? poll : p));
+          } else {
+            return [...prev, poll].sort((a, b) => a.id - b.id);
+          }
+        });
+
+        // Load user vote if connected
+        if (userData) {
+          const address = userData.profile.stxAddress.testnet;
+          const vote = await getUserVote(pollId, address);
+          setUserVotes((prev) => ({ ...prev, [pollId]: vote }));
+        }
+      }
+    } catch (error) {
+      console.error("Error loading specific poll:", error);
+    }
+  };
+
+  const handleViewPoll = () => {
+    const id = parseInt(pollIdToView);
+    if (!isNaN(id) && id >= 0) {
+      loadSpecificPoll(id);
+    }
+  };
+
+  useEffect(() => {
+    loadPolls();
+  }, [userData]);
+
+  // Refresh data every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(loadPolls, 30000);
+    return () => clearInterval(interval);
+  }, [userData]);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-gray-900">Polling App</h1>
+
+            <div className="flex items-center gap-4">
+              {userData ? (
+                <div className="flex items-center gap-4">
+                  <div className="text-sm text-gray-600">
+                    <p>
+                      {abbreviateAddress(userData.profile.stxAddress.testnet)}
+                    </p>
+                    <p>{formatStx(stxBalance)} STX</p>
+                  </div>
+                  <button
+                    onClick={disconnectWallet}
+                    className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={connectWallet}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                >
+                  Connect Wallet
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Block height info */}
+          <div className="mt-2 text-sm text-gray-500">
+            Current block: {currentBlock}
+          </div>
+        </div>
+      </header>
+
+      {/* Tabs */}
+      <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="flex gap-4 border-b">
+          <button
+            onClick={() => setActiveTab("browse")}
+            className={`pb-2 px-1 ${
+              activeTab === "browse"
+                ? "border-b-2 border-blue-600 text-blue-600 font-medium"
+                : "text-gray-500"
+            }`}
+          >
+            Browse Polls
+          </button>
+          <button
+            onClick={() => setActiveTab("create")}
+            className={`pb-2 px-1 ${
+              activeTab === "create"
+                ? "border-b-2 border-blue-600 text-blue-600 font-medium"
+                : "text-gray-500"
+            }`}
+          >
+            Create Poll
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {activeTab === "browse" && (
+          <div>
+            {/* Load specific poll */}
+            <div className="mb-8 max-w-md mx-auto">
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={pollIdToView}
+                  onChange={(e) => setPollIdToView(e.target.value)}
+                  placeholder="Enter poll ID"
+                  className="flex-1 p-2 border border-gray-300 rounded-md"
+                  min="0"
+                />
+                <button
+                  onClick={handleViewPoll}
+                  className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                >
+                  Load Poll
+                </button>
+              </div>
+            </div>
+
+            {/* Polls list */}
+            {loading ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">Loading polls...</p>
+              </div>
+            ) : polls.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">
+                  No polls found. Create the first one!
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {polls.map((poll) => (
+                  <PollCard
+                    key={poll.id}
+                    poll={poll}
+                    userVote={userVotes[poll.id] || null}
+                    currentBlock={currentBlock}
+                    onVote={handleVote}
+                    onFinalize={handleFinalizePoll}
+                    isConnected={!!userData}
+                    userAddress={userData?.profile.stxAddress.testnet}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "create" && (
+          <CreatePollForm
+            onCreatePoll={handleCreatePoll}
+            isConnected={!!userData}
+          />
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-white border-t mt-12">
+        <div className="max-w-7xl mx-auto px-4 py-6 text-center text-gray-600">
+          <p>Polling App on Stacks Testnet</p>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/components/CreatePollForm.tsx
+// ========================================
+
+"use client";
+
+import { useState } from "react";
+
+type CreatePollFormProps = {
+  onCreatePoll: (
+    question: string,
+    options: string[],
+    duration: number,
+  ) => Promise<void>;
+  isConnected: boolean;
+};
+
+export function CreatePollForm({
+  onCreatePoll,
+  isConnected,
+}: CreatePollFormProps) {
+  const [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(["", ""]);
+  const [duration, setDuration] = useState(144); // ~1 day in blocks
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const addOption = () => {
+    if (options.length < 5) {
+      setOptions([...options, ""]);
+    }
+  };
+
+  const removeOption = (index: number) => {
+    if (options.length > 2) {
+      setOptions(options.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateOption = (index: number, value: string) => {
+    const newOptions = [...options];
+    newOptions[index] = value;
+    setOptions(newOptions);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isConnected) {
+      alert("Please connect your wallet first");
+      return;
+    }
+
+    // Validate that all options have text
+    const validOptions = options.filter((opt) => opt.trim());
+    if (validOptions.length < 2) {
+      alert("Please provide at least 2 options");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onCreatePoll(question, validOptions, duration);
+      // Reset form
+      setQuestion("");
+      setOptions(["", ""]);
+      setDuration(144);
+    } catch (error) {
+      console.error("Error creating poll:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Create New Poll</h2>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Question ({question.length}/80)
+          </label>
+          <input
+            type="text"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            maxLength={80}
+            className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="What's your question?"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Options
+          </label>
+          {options.map((option, index) => (
+            <div key={index} className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={option}
+                onChange={(e) => updateOption(index, e.target.value)}
+                maxLength={40}
+                className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder={`Option ${index + 1}`}
+                required={index < 2}
+              />
+              {index >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => removeOption(index)}
+                  className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+
+          {options.length < 5 && (
+            <button
+              type="button"
+              onClick={addOption}
+              className="w-full p-2 border-2 border-dashed border-gray-300 rounded-md text-gray-500 hover:border-gray-400"
+            >
+              + Add Option
+            </button>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Duration (blocks) - ~1 block per 10 minutes
+          </label>
+          <input
+            type="number"
+            value={duration}
+            onChange={(e) => setDuration(parseInt(e.target.value))}
+            min={1}
+            max={10000}
+            className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            ~{Math.round(duration / 6)} hours ({Math.round(duration / 144)}{" "}
+            days)
+          </p>
+        </div>
+
+        <button
+          type="submit"
+          disabled={!isConnected || isSubmitting}
+          className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          {isSubmitting ? "Creating..." : "Create Poll"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/components/PollCard.tsx
+// ========================================
+
+"use client";
+
+import type { Poll, UserVote } from "@/lib/poll-contract";
+import { abbreviateAddress } from "@/lib/stx-utils";
+import { useState } from "react";
+
+type PollCardProps = {
+  poll: Poll;
+  userVote: UserVote;
+  currentBlock: number;
+  onVote: (pollId: number, choice: number) => Promise<void>;
+  onFinalize: (pollId: number) => Promise<void>;
+  isConnected: boolean;
+  userAddress?: string;
+};
+
+export function PollCard({
+  poll,
+  userVote,
+  currentBlock,
+  onVote,
+  onFinalize,
+  isConnected,
+  userAddress,
+}: PollCardProps) {
+  const [selectedChoice, setSelectedChoice] = useState<number | null>(null);
+  const [isVoting, setIsVoting] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+
+  const totalVotes = poll.voteCounts.reduce((sum, count) => sum + count, 0);
+  const isExpired = currentBlock > poll.end;
+  const canFinalize =
+    isExpired && poll.status === 0 && userAddress === poll.creator;
+
+  const handleVote = async () => {
+    if (selectedChoice === null || !isConnected) return;
+
+    setIsVoting(true);
+    try {
+      await onVote(poll.id, selectedChoice);
+    } finally {
+      setIsVoting(false);
+    }
+  };
+
+  const handleFinalize = async () => {
+    setIsFinalizing(true);
+    try {
+      await onFinalize(poll.id);
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
+  const getVotePercentage = (votes: number): number => {
+    if (totalVotes === 0) return 0;
+    return Math.round((votes / totalVotes) * 100);
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6 max-w-md mx-auto">
+      <div className="mb-4">
+        <h3 className="text-xl font-semibold text-gray-800 mb-2">
+          {poll.question}
+        </h3>
+        <div className="text-sm text-gray-500 space-y-1">
+          <p>Created by: {abbreviateAddress(poll.creator)}</p>
+          <p>Poll ID: {poll.id}</p>
+          <p>
+            Status:{" "}
+            {poll.status === 0 ? (poll.isOpen ? "Open" : "Expired") : "Closed"}
+          </p>
+          <p>
+            Ends at block: {poll.end}{" "}
+            {isExpired
+              ? "(Expired)"
+              : `(${poll.end - currentBlock} blocks left)`}
+          </p>
+          <p>Total votes: {totalVotes}</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {poll.options.map((option, index) => {
+          const votes = poll.voteCounts[index];
+          const percentage = getVotePercentage(votes);
+          const isUserChoice = userVote?.choice === index;
+          const isSelected = selectedChoice === index;
+
+          return (
+            <div key={index} className="relative">
+              <div
+                className={`p-3 rounded-md border-2 transition-colors ${
+                  isUserChoice
+                    ? "border-green-500 bg-green-50"
+                    : isSelected
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-200 hover:border-gray-300"
+                } ${
+                  poll.isOpen && !userVote && isConnected
+                    ? "cursor-pointer"
+                    : ""
+                }`}
+                onClick={() => {
+                  if (poll.isOpen && !userVote && isConnected) {
+                    setSelectedChoice(isSelected ? null : index);
+                  }
+                }}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">{option}</span>
+                  <div className="text-sm text-gray-600">
+                    {votes} vote{votes !== 1 ? "s" : ""} ({percentage}%)
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      isUserChoice ? "bg-green-500" : "bg-blue-500"
+                    }`}
+                    style={{ width: `${percentage}%` }}
+                  ></div>
+                </div>
+
+                {isUserChoice && (
+                  <div className="absolute top-2 right-2">
+                    <span className="text-green-600 font-bold">✓</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-6 space-y-2">
+        {poll.isOpen && !userVote && isConnected && (
+          <button
+            onClick={handleVote}
+            disabled={selectedChoice === null || isVoting}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {isVoting ? "Voting..." : "Vote"}
+          </button>
+        )}
+
+        {!isConnected && poll.isOpen && (
+          <p className="text-center text-gray-500 py-2">
+            Connect wallet to vote
+          </p>
+        )}
+
+        {userVote && (
+          <p className="text-center text-green-600 py-2 font-medium">
+            You voted for: {poll.options[userVote.choice]}
+          </p>
+        )}
+
+        {!poll.isOpen && poll.status === 0 && (
+          <p className="text-center text-orange-600 py-2">
+            Poll expired but not finalized
+          </p>
+        )}
+
+        {poll.status === 1 && (
+          <p className="text-center text-gray-600 py-2">Poll closed</p>
+        )}
+
+        {canFinalize && (
+          <button
+            onClick={handleFinalize}
+            disabled={isFinalizing}
+            className="w-full bg-orange-600 text-white py-2 px-4 rounded-md hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {isFinalizing ? "Finalizing..." : "Finalize Poll"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/hooks/usePolling.ts
+// ========================================
+
+import { createPoll, finalizePoll, vote } from "@/lib/poll-contract";
+import { getStxBalance } from "@/lib/stx-utils";
+import {
+  AppConfig,
+  openContractCall,
+  showConnect,
+  type UserData,
+  UserSession,
+} from "@stacks/connect";
+import { PostConditionMode } from "@stacks/transactions";
+import { useEffect, useState } from "react";
+
+const appDetails = {
+  name: "Polling App",
+  icon: "https://cryptologos.cc/logos/stacks-stx-logo.png",
+};
+
+const appConfig = new AppConfig(["store_write"]);
+const userSession = new UserSession({ appConfig });
+
+export function usePolling() {
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [stxBalance, setStxBalance] = useState(0);
+
+  function connectWallet() {
+    showConnect({
+      appDetails,
+      onFinish: () => {
+        window.location.reload();
+      },
+      userSession,
+    });
+  }
+
+  function disconnectWallet() {
+    userSession.signUserOut();
+    setUserData(null);
+  }
+
+  async function handleCreatePoll(
+    question: string,
+    options: string[],
+    duration: number,
+  ) {
+    if (typeof window === "undefined") return;
+
+    // Validation
+    if (!question.trim()) {
+      window.alert("Question cannot be empty");
+      return;
+    }
+    if (question.length > 80) {
+      window.alert("Question too long (max 80 characters)");
+      return;
+    }
+    if (options.length < 2 || options.length > 5) {
+      window.alert("Must have between 2 and 5 options");
+      return;
+    }
+    if (options.some((opt) => opt.length > 40)) {
+      window.alert("Option too long (max 40 characters)");
+      return;
+    }
+    if (duration <= 0 || duration > 10000) {
+      window.alert("Duration must be between 1 and 10000 blocks");
+      return;
+    }
+
+    try {
+      if (!userData) throw new Error("User not connected");
+      const txOptions = await createPoll(question, options, duration);
+      await openContractCall({
+        ...txOptions,
+        appDetails,
+        onFinish: (data) => {
+          console.log(data);
+          window.alert("Poll creation transaction sent!");
+        },
+        postConditionMode: PostConditionMode.Allow,
+      });
+    } catch (_err) {
+      const err = _err as Error;
+      console.error(err);
+      window.alert(err.message);
+    }
+  }
+
+  async function handleVote(pollId: number, choice: number) {
+    if (typeof window === "undefined") return;
+
+    try {
+      if (!userData) throw new Error("User not connected");
+      const txOptions = await vote(pollId, choice);
+      await openContractCall({
+        ...txOptions,
+        appDetails,
+        onFinish: (data) => {
+          console.log(data);
+          window.alert("Vote transaction sent!");
+        },
+        postConditionMode: PostConditionMode.Allow,
+      });
+    } catch (_err) {
+      const err = _err as Error;
+      console.error(err);
+      window.alert(err.message);
+    }
+  }
+
+  async function handleFinalizePoll(pollId: number) {
+    if (typeof window === "undefined") return;
+
+    try {
+      if (!userData) throw new Error("User not connected");
+      const txOptions = await finalizePoll(pollId);
+      await openContractCall({
+        ...txOptions,
+        appDetails,
+        onFinish: (data) => {
+          console.log(data);
+          window.alert("Finalize poll transaction sent!");
+        },
+        postConditionMode: PostConditionMode.Allow,
+      });
+    } catch (_err) {
+      const err = _err as Error;
+      console.error(err);
+      window.alert(err.message);
+    }
+  }
+
+  useEffect(() => {
+    if (userSession.isSignInPending()) {
+      userSession.handlePendingSignIn().then((userData) => {
+        setUserData(userData);
+      });
+    } else if (userSession.isUserSignedIn()) {
+      setUserData(userSession.loadUserData());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (userData) {
+      const address = userData.profile.stxAddress.testnet;
+      getStxBalance(address).then((balance) => {
+        setStxBalance(balance);
+      });
+    }
+  }, [userData]);
+
+  return {
+    userData,
+    stxBalance,
+    connectWallet,
+    disconnectWallet,
+    handleCreatePoll,
+    handleVote,
+    handleFinalizePoll,
+  };
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/index.css
+// ========================================
+
+@import "tailwindcss";
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/lib/poll-contract.ts
+// ========================================
+
+import { STACKS_TESTNET } from "@stacks/network";
+import {
+  fetchCallReadOnlyFunction,
+  type OptionalCV,
+  type PrincipalCV,
+  stringAsciiCV,
+  type TupleCV,
+  uintCV,
+  type UIntCV,
+  someCV,
+  noneCV,
+} from "@stacks/transactions";
+
+const CONTRACT_ADDRESS = "ST13J8Q81A768CWVF2YPWMZGRMRERPVKMGD2Q02W4";
+const CONTRACT_NAME = "simple-waifu-pool-test";
+
+type PollCV = {
+  question: string;
+  creator: PrincipalCV;
+  start: UIntCV;
+  end: UIntCV;
+  "option-count": UIntCV;
+  status: UIntCV;
+};
+
+export type Poll = {
+  id: number;
+  question: string;
+  creator: string;
+  start: number;
+  end: number;
+  optionCount: number;
+  status: number; // 0 = open, 1 = closed
+  options: string[];
+  voteCounts: number[];
+  isOpen: boolean;
+};
+
+export type UserVote = {
+  choice: number;
+} | null;
+
+// Helper function to check if poll is open
+export function isPollOpen(poll: Poll, currentBlock: number): boolean {
+  return poll.status === 0 && currentBlock <= poll.end;
+}
+
+// Get current block height
+export async function getCurrentBlockHeight(): Promise<number> {
+  try {
+    const response = await fetch("https://api.testnet.hiro.so/v2/info");
+    const data = await response.json();
+    return data.stacks_tip_height;
+  } catch (error) {
+    console.error("Failed to get current block height:", error);
+    return 0;
+  }
+}
+
+// Get poll details
+export async function getPoll(pollId: number): Promise<Poll | null> {
+  try {
+    const pollData = await fetchCallReadOnlyFunction({
+      contractAddress: CONTRACT_ADDRESS,
+      contractName: CONTRACT_NAME,
+      functionName: "get-poll",
+      functionArgs: [uintCV(pollId)],
+      senderAddress: CONTRACT_ADDRESS,
+      network: STACKS_TESTNET,
+    });
+
+    const responseCV = pollData as OptionalCV<TupleCV<PollCV>>;
+    if (responseCV.type === "none") return null;
+    if (responseCV.value.type !== "tuple") return null;
+
+    const poll = responseCV.value.value;
+    const optionCount = parseInt(poll["option-count"].value.toString());
+
+    // Fetch all options
+    const options: string[] = [];
+    for (let i = 0; i < optionCount; i++) {
+      const option = await getOption(pollId, i);
+      options.push(option || "");
+    }
+
+    // Fetch vote counts
+    const voteCounts: number[] = [];
+    for (let i = 0; i < optionCount; i++) {
+      const count = await getVoteCount(pollId, i);
+      voteCounts.push(count);
+    }
+
+    const currentBlock = await getCurrentBlockHeight();
+    const pollObj: Poll = {
+      id: pollId,
+      question: poll.question,
+      creator: poll.creator.value,
+      start: parseInt(poll.start.value.toString()),
+      end: parseInt(poll.end.value.toString()),
+      optionCount,
+      status: parseInt(poll.status.value.toString()),
+      options,
+      voteCounts,
+      isOpen:
+        poll.status.value.toString() === "0" &&
+        currentBlock <= parseInt(poll.end.value.toString()),
+    };
+
+    return pollObj;
+  } catch (error) {
+    console.error("Error fetching poll:", error);
+    return null;
+  }
+}
+
+// Get option text
+export async function getOption(
+  pollId: number,
+  index: number,
+): Promise<string | null> {
+  try {
+    const optionData = await fetchCallReadOnlyFunction({
+      contractAddress: CONTRACT_ADDRESS,
+      contractName: CONTRACT_NAME,
+      functionName: "get-option",
+      functionArgs: [uintCV(pollId), uintCV(index)],
+      senderAddress: CONTRACT_ADDRESS,
+      network: STACKS_TESTNET,
+    });
+
+    const responseCV = optionData as OptionalCV<TupleCV<{ text: string }>>;
+    if (responseCV.type === "none") return null;
+    if (responseCV.value.type !== "tuple") return null;
+
+    return responseCV.value.value.text;
+  } catch (error) {
+    console.error("Error fetching option:", error);
+    return null;
+  }
+}
+
+// Get vote count for an option
+export async function getVoteCount(
+  pollId: number,
+  index: number,
+): Promise<number> {
+  try {
+    const countData = await fetchCallReadOnlyFunction({
+      contractAddress: CONTRACT_ADDRESS,
+      contractName: CONTRACT_NAME,
+      functionName: "get-vote-count",
+      functionArgs: [uintCV(pollId), uintCV(index)],
+      senderAddress: CONTRACT_ADDRESS,
+      network: STACKS_TESTNET,
+    });
+
+    return parseInt((countData as UIntCV).value.toString());
+  } catch (error) {
+    console.error("Error fetching vote count:", error);
+    return 0;
+  }
+}
+
+// Get user's vote for a poll
+export async function getUserVote(
+  pollId: number,
+  userAddress: string,
+): Promise<UserVote> {
+  try {
+    const voteData = await fetchCallReadOnlyFunction({
+      contractAddress: CONTRACT_ADDRESS,
+      contractName: CONTRACT_NAME,
+      functionName: "get-user-vote",
+      functionArgs: [uintCV(pollId), PrincipalCV.from(userAddress)],
+      senderAddress: CONTRACT_ADDRESS,
+      network: STACKS_TESTNET,
+    });
+
+    const responseCV = voteData as OptionalCV<TupleCV<{ choice: UIntCV }>>;
+    if (responseCV.type === "none") return null;
+    if (responseCV.value.type !== "tuple") return null;
+
+    return {
+      choice: parseInt(responseCV.value.value.choice.value.toString()),
+    };
+  } catch (error) {
+    console.error("Error fetching user vote:", error);
+    return null;
+  }
+}
+
+// Create poll transaction options
+export async function createPoll(
+  question: string,
+  options: string[],
+  duration: number,
+) {
+  if (options.length < 2 || options.length > 5) {
+    throw new Error("Must have between 2 and 5 options");
+  }
+
+  const functionArgs = [
+    stringAsciiCV(question),
+    stringAsciiCV(options[0]),
+    stringAsciiCV(options[1]),
+    options.length > 2 ? someCV(stringAsciiCV(options[2])) : noneCV(),
+    options.length > 3 ? someCV(stringAsciiCV(options[3])) : noneCV(),
+    options.length > 4 ? someCV(stringAsciiCV(options[4])) : noneCV(),
+    uintCV(duration),
+  ];
+
+  return {
+    contractAddress: CONTRACT_ADDRESS,
+    contractName: CONTRACT_NAME,
+    functionName: "create-poll",
+    functionArgs,
+  };
+}
+
+// Vote transaction options
+export async function vote(pollId: number, choice: number) {
+  return {
+    contractAddress: CONTRACT_ADDRESS,
+    contractName: CONTRACT_NAME,
+    functionName: "vote",
+    functionArgs: [uintCV(pollId), uintCV(choice)],
+  };
+}
+
+// Finalize poll transaction options
+export async function finalizePoll(pollId: number) {
+  return {
+    contractAddress: CONTRACT_ADDRESS,
+    contractName: CONTRACT_NAME,
+    functionName: "finalize",
+    functionArgs: [uintCV(pollId)],
+  };
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/lib/stx-utils.ts
+// ========================================
+
+export function abbreviateAddress(address: string) {
+  return `${address.substring(0, 5)}...${address.substring(36)}`;
+}
+
+export function abbreviateTxnId(txnId: string) {
+  return `${txnId.substring(0, 5)}...${txnId.substring(62)}`;
+}
+
+export function explorerAddress(address: string) {
+  return `https://explorer.hiro.so/address/${address}?chain=testnet`;
+}
+
+export async function getStxBalance(address: string) {
+  const baseUrl = "https://api.testnet.hiro.so";
+  const url = `${baseUrl}/extended/v1/address/${address}/stx`;
+
+  const response = await fetch(url).then((res) => res.json());
+  const balance = parseInt(response.balance);
+  return balance;
+}
+
+// Convert a raw STX amount to a human readable format by respecting the 6 decimal places
+export function formatStx(amount: number) {
+  return parseFloat((amount / 10 ** 6).toFixed(2));
+}
+
+// Convert a human readable STX balance to the raw amount
+export function parseStx(amount: number) {
+  return amount * 10 ** 6;
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/main.tsx
+// ========================================
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/src/vite-env.d.ts
+// ========================================
+
+/// <reference types="vite/client" />
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/tsconfig.app.json
+// ========================================
+
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"]
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/tsconfig.json
+// ========================================
+
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "types": ["vite/client"]
+    }
+  }
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/tsconfig.node.json
+// ========================================
+
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+
+
+// ========================================
+// FILE: simple-waifu-poll-frontend/vite.config.ts
+// ========================================
+
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+});
+
+
+
+==================================================
+SECTION: FRONTEND (Next.js) (simple-waifu-pool)
+==================================================
+
+// ========================================
+// FILE: simple-waifu-pool/.cache/stacks-devnet-1754805074/conf/Signer-0.toml
+// ========================================
+
+
+stacks_private_key = "7287ba251d44a4d3fd9276c88ce34c5c52a038955511cccaf77e61068649c17801"
+node_host = "stacks-node.simple-waifu-pool.devnet:20443" # eg "127.0.0.1:20443"
+# must be added as event_observer in node config:
+endpoint = "0.0.0.0:30000"
+network = "testnet"
+auth_password = "12345"
+db_path = "stacks-signer-0.sqlite"
+
+
+// ========================================
+// FILE: simple-waifu-pool/.cache/stacks-devnet-1754805074/conf/Stacks.toml
+// ========================================
+
+
+[node]
+working_dir = "/devnet"
+rpc_bind = "0.0.0.0:20443"
+p2p_bind = "0.0.0.0:20444"
+data_url = "http://127.0.0.1:20443"
+p2p_address = "127.0.0.1:20443"
+miner = true
+stacker = true
+seed = "3b68e410cc7f9b8bae76f2f2991b69ecd0627c95da22a904065dfb2a73d0585f01"
+local_peer_seed = "3b68e410cc7f9b8bae76f2f2991b69ecd0627c95da22a904065dfb2a73d0585f01"
+pox_sync_sample_secs = 0
+wait_time_for_blocks = 0
+wait_time_for_microblocks = 0
+next_initiative_delay = 3000
+mine_microblocks = false
+microblock_frequency = 1000
+
+[connection_options]
+# inv_sync_interval = 10
+# download_interval = 10
+# walk_interval = 10
+disable_block_download = false
+disable_inbound_handshakes = true
+disable_inbound_walks = true
+public_ip_address = "1.1.1.1:1234"
+auth_token = "12345"
+
+[miner]
+first_attempt_time_ms = 500
+block_reward_recipient = "ST3Q96TFVE6E0Q91XVX6S8RWAJW5R8XTZ8YEBM8RQ"
+microblock_attempt_time_ms = 10
+pre_nakamoto_mock_signing = false
+mining_key = "19ec1c3e31d139c989a23a27eac60d1abfad5277d3ae9604242514c738258efa01"
+
+[[ustx_balance]]
+address = "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "STNHKEPYEPJ8ET55ZZ0M5A34J0R3N5FM2CMMMAZ6"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST3TF2B73R3QVZDF9Z0KE1SR2X3HKZXS6E7R50AW0"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST2JHG361ZXG51QTKY2NQCVBPPRRE2KZB1HR05NNC"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST2NEB84ASENDXKYGJPQW86YXQCEFEX2ZQPG87ND"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST2REHHS5J3CERCRBEPMGH7921Q6PYKAADT7JP2VB"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST3AM1A56AK2C1XAFJ4115ZSV26EB49BVQ10MGCS0"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST3PF13W7Z0RRM42A8VZRVFQ75SV1K26RXEP8YGKJ"
+amount = 100000000000000
+
+[[ustx_balance]]
+address = "ST3NBRSFKX28FQ2ZJ1MAKX58HKHSDGNV5N7R21XCP"
+amount = 100000000000000
+
+[[events_observer]]
+endpoint = "stacks-signer-0.simple-waifu-pool.devnet:30000"
+events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
+
+# Add orchestrator (docker-host) as an event observer
+# Also used by the devnet chainhook instance
+[[events_observer]]
+endpoint = "host.docker.internal:20445"
+events_keys = ["*"]
+
+# Add stacks-api as an event observer
+[[events_observer]]
+endpoint = "stacks-api.simple-waifu-pool.devnet:3700"
+events_keys = ["*"]
+
+[burnchain]
+chain = "bitcoin"
+mode = "krypton"
+magic_bytes = "T3"
+first_burn_block_height = 100
+pox_prepare_length = 5
+pox_reward_length = 20
+burn_fee_cap = 20_000
+poll_time_secs = 1
+timeout = 2
+peer_host = "host.docker.internal"
+rpc_ssl = false
+wallet_name = ""
+username = "devnet"
+password = "devnet"
+rpc_port = 20445
+peer_port = 18444
+
+[[burnchain.epochs]]
+epoch_name = "1.0"
+start_height = 0
+
+[[burnchain.epochs]]
+epoch_name = "2.0"
+start_height = 100
+
+[[burnchain.epochs]]
+epoch_name = "2.05"
+start_height = 100
+
+[[burnchain.epochs]]
+epoch_name = "2.1"
+start_height = 101
+
+[[burnchain.epochs]]
+epoch_name = "2.2"
+start_height = 102
+
+[[burnchain.epochs]]
+epoch_name = "2.3"
+start_height = 103
+
+[[burnchain.epochs]]
+epoch_name = "2.4"
+start_height = 104
+
+[[burnchain.epochs]]
+epoch_name = "2.5"
+start_height = 108
+
+[[burnchain.epochs]]
+epoch_name = "3.0"
+start_height = 142
+
+[[burnchain.epochs]]
+epoch_name = "3.1"
+start_height = 144
+
+[[burnchain.epochs]]
+epoch_name = "3.2"
+start_height = 146
+
+
+// ========================================
+// FILE: simple-waifu-pool/.cache/stacks-devnet-1754805074/data/1/bitcoin/regtest/banlist.json
+// ========================================
+
+{
+    "banned_nets": [
+    ]
+}
+
+
+// ========================================
+// FILE: simple-waifu-pool/.cache/stacks-devnet-1754805074/data/1/bitcoin/regtest/settings.json
+// ========================================
+
+{
+}
+
+
+// ========================================
+// FILE: simple-waifu-pool/.vscode/settings.json
+// ========================================
+
+
+{
+    "files.eol": "\n"
+}
+
+
+// ========================================
+// FILE: simple-waifu-pool/.vscode/tasks.json
+// ========================================
+
+
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "check contracts",
+      "group": "test",
+      "type": "shell",
+      "command": "clarinet check"
+    },
+    {
+      "type": "npm",
+      "script": "test",
+      "group": "test",
+      "problemMatcher": [],
+      "label": "npm test"
+    }
+  ]
+}
+
+
+// ========================================
+// FILE: simple-waifu-pool/Clarinet.toml
+// ========================================
+
+[project]
+name = 'simple-waifu-poll'
+description = ''
+authors = []
+telemetry = true
+cache_dir = './.cache'
+requirements = []
+
+[contracts.simple-waifu-pool-test]
+path = 'contracts/simple-waifu-poll.clar'
+clarity_version = 3
+epoch = 'latest'
+[repl.analysis]
+passes = ['check_checker']
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
+
+[repl.remote_data]
+enabled = false
+api_url = 'https://api.hiro.so'
+
+
+// ========================================
+// FILE: simple-waifu-pool/contracts/simple-waifu-poll.clar
+// ========================================
+
+;; ---------- CONSTANTS / ERROR CODES ----------
+(define-constant ERR_TOO_FEW_OPTIONS u100)
+(define-constant ERR_TOO_MANY_OPTIONS u101)
+(define-constant ERR_POLL_NOT_FOUND u102)
+(define-constant ERR_ALREADY_VOTED u103)
+(define-constant ERR_POLL_CLOSED u104)
+(define-constant ERR_OUT_OF_RANGE_OPTION u105)
+(define-constant ERR_TOO_LONG_QUESTION u106)
+(define-constant ERR_TOO_LONG_OPTION u107)
+(define-constant ERR_DURATION_ZERO u108)
+(define-constant ERR_DURATION_MAX u109)
+(define-constant ERR_ALREADY_CLOSED u110)
+(define-constant ERR_TOO_EARLY_FINALIZE u111)
+
+(define-constant MAX_OPTIONS u5)
+(define-constant MIN_OPTIONS u2)
+(define-constant MAX_QUESTION_LEN u80)
+(define-constant MAX_OPTION_LEN u40)
+(define-constant MAX_DURATION u10000)
+
+;; ---------- STATE ----------
+(define-data-var next-poll-id uint u0)
+
+(define-map polls
+  { id: uint }
+  {
+    question: (string-ascii 80),
+    creator: principal,
+    start: uint,
+    end: uint,
+    option-count: uint,
+    status: uint        ;; 0 = open, 1 = closed
+  }
+)
+
+(define-map poll-options
+  { id: uint, index: uint }
+  { text: (string-ascii 40) }
+)
+
+(define-map votes
+  { id: uint, voter: principal }
+  { choice: uint }
+)
+
+(define-map counts
+  { id: uint, index: uint }
+  { total: uint }
+)
+
+;; ---------- HELPERS ----------
+(define-read-only (poll-exists (poll-id uint))
+  (is-some (map-get? polls {id: poll-id}))
+)
+
+(define-read-only (poll-open? (p (tuple (question (string-ascii 80))
+                                        (creator principal)
+                                        (start uint)
+                                        (end uint)
+                                        (option-count uint)
+                                        (status uint))))
+  (and (is-eq (get status p) u0)
+       (<= stacks-block-height (get end p)))
+)
+
+(define-private (increment-count (poll-id uint) (choice uint))
+  (let ((curr (default-to {total: u0} (map-get? counts {id: poll-id, index: choice}))))
+    (map-set counts {id: poll-id, index: choice} {total: (+ (get total curr) u1)})
+  )
+)
+
+;; ---------- PUBLIC: CREATE ----------
+(define-public (create-poll
+    (question (string-ascii 80))
+    (option1 (string-ascii 40))
+    (option2 (string-ascii 40))
+    (option3 (optional (string-ascii 40)))
+    (option4 (optional (string-ascii 40)))
+    (option5 (optional (string-ascii 40)))
+    (duration uint)
+  )
+  (begin
+    ;; basic validation
+    (asserts! (> (len question) u0) (err ERR_TOO_LONG_QUESTION))
+    (asserts! (<= (len question) MAX_QUESTION_LEN) (err ERR_TOO_LONG_QUESTION))
+    (asserts! (> (len option1) u0) (err ERR_TOO_LONG_OPTION))
+    (asserts! (> (len option2) u0) (err ERR_TOO_LONG_OPTION))
+    (asserts! (<= (len option1) MAX_OPTION_LEN) (err ERR_TOO_LONG_OPTION))
+    (asserts! (<= (len option2) MAX_OPTION_LEN) (err ERR_TOO_LONG_OPTION))
+    (asserts! (> duration u0) (err ERR_DURATION_ZERO))
+    (asserts! (<= duration MAX_DURATION) (err ERR_DURATION_MAX))
+
+    (let (
+          (pid (var-get next-poll-id))
+          (start stacks-block-height)
+          (end (+ stacks-block-height duration))
+          (o3c (if (is-some option3) u1 u0))
+          (o4c (if (is-some option4) u1 u0))
+          (o5c (if (is-some option5) u1 u0))
+          (count-options (+ u2 (+ o3c (+ o4c o5c))))
+         )
+      (asserts! (>= count-options MIN_OPTIONS) (err ERR_TOO_FEW_OPTIONS))
+      (asserts! (<= count-options MAX_OPTIONS) (err ERR_TOO_MANY_OPTIONS))
+
+      ;; store poll meta
+      (map-set polls {id: pid} {
+        question: question,
+        creator: tx-sender,
+        start: start,
+        end: end,
+        option-count: count-options,
+        status: u0
+      })
+
+      ;; mandatory first 2 options
+      (map-set poll-options {id: pid, index: u0} {text: option1})
+      (map-set poll-options {id: pid, index: u1} {text: option2})
+
+      ;; optional options: compute indices sequentially
+      (if (is-some option3)
+          (begin
+            (map-set poll-options {id: pid, index: u2} {text: (unwrap-panic option3)})
+            true)
+          true)
+
+      (if (is-some option4)
+          (begin
+            (map-set poll-options
+                     {id: pid, index: (+ u2 o3c)}
+                     {text: (unwrap-panic option4)})
+            true)
+          true)
+
+      (if (is-some option5)
+          (begin
+            (map-set poll-options
+                     {id: pid, index: (+ u2 (+ o3c o4c))}
+                     {text: (unwrap-panic option5)})
+            true)
+          true)
+
+      (var-set next-poll-id (+ pid u1))
+      (ok pid)
+    )
+  )
+)
+
+;; ---------- PUBLIC: VOTE ----------
+(define-public (vote (poll-id uint) (choice uint))
+  (let ((p (unwrap! (map-get? polls {id: poll-id}) (err ERR_POLL_NOT_FOUND))))
+    (asserts! (poll-open? p) (err ERR_POLL_CLOSED))
+    (asserts! (< choice (get option-count p)) (err ERR_OUT_OF_RANGE_OPTION))
+    (asserts! (is-none (map-get? votes {id: poll-id, voter: tx-sender})) (err ERR_ALREADY_VOTED))
+    ;; Additional validation to satisfy static analysis
+    (asserts! (and (>= poll-id u0) (<= poll-id u4294967295)) (err ERR_POLL_NOT_FOUND))
+    (asserts! (and (>= choice u0) (< choice u5)) (err ERR_OUT_OF_RANGE_OPTION))
+    (map-set votes {id: poll-id, voter: tx-sender} {choice: choice})
+    (increment-count poll-id choice)
+    (ok true)
+  )
+)
+
+;; ---------- PUBLIC: FINALIZE ----------
+(define-public (finalize (poll-id uint))
+  (let ((p (unwrap! (map-get? polls {id: poll-id}) (err ERR_POLL_NOT_FOUND))))
+    (asserts! (is-eq (get status p) u0) (err ERR_ALREADY_CLOSED))
+    (asserts! (> stacks-block-height (get end p)) (err ERR_TOO_EARLY_FINALIZE))
+    ;; Additional validation to satisfy static analysis
+    (asserts! (and (>= poll-id u0) (<= poll-id u4294967295)) (err ERR_POLL_NOT_FOUND))
+    (map-set polls {id: poll-id} (merge p {status: u1}))
+    (ok true)
+  )
+)
+
+;; ---------- READ-ONLY ----------
+(define-read-only (get-poll (poll-id uint))
+  (map-get? polls {id: poll-id})
+)
+
+(define-read-only (get-option (poll-id uint) (index uint))
+  (map-get? poll-options {id: poll-id, index: index})
+)
+
+(define-read-only (get-vote-count (poll-id uint) (index uint))
+  (let ((c (map-get? counts {id: poll-id, index: index})))
+    (if (is-some c)
+        (ok (get total (unwrap-panic c)))
+        (ok u0))
+  )
+)
+
+(define-read-only (get-user-vote (poll-id uint) (user principal))
+  (map-get? votes {id: poll-id, voter: user})
+)
+
+
+// ========================================
+// FILE: simple-waifu-pool/tests/simple-waifu-pool.test.ts
+// ========================================
+
+
+import { describe, expect, it } from "vitest";
+
+const accounts = simnet.getAccounts();
+const address1 = accounts.get("wallet_1")!;
+
+/*
+  The test below is an example. To learn more, read the testing documentation here:
+  https://docs.hiro.so/stacks/clarinet-js-sdk
+*/
+
+describe("example tests", () => {
+  it("ensures simnet is well initialised", () => {
+    expect(simnet.blockHeight).toBeDefined();
+  });
+
+  // it("shows an example", () => {
+  //   const { result } = simnet.callReadOnlyFn("counter", "get-counter", [], address1);
+  //   expect(result).toBeUint(0);
+  // });
+});
+
+
+// ========================================
+// FILE: simple-waifu-pool/tsconfig.json
+// ========================================
+
+
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ESNext"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "node_modules/@hirosystems/clarinet-sdk/vitest-helpers/src",
+    "tests"
+  ]
+}
+
+
+// ========================================
+// FILE: simple-waifu-pool/vitest.config.js
+// ========================================
+
+
+/// <reference types="vitest" />
+
+import { defineConfig } from "vite";
+import { vitestSetupFilePath, getClarinetVitestsArgv } from "@hirosystems/clarinet-sdk/vitest";
+
+/*
+  In this file, Vitest is configured so that it works seamlessly with Clarinet and the Simnet.
+
+  The `vitest-environment-clarinet` will initialise the clarinet-sdk
+  and make the `simnet` object available globally in the test files.
+
+  `vitestSetupFilePath` points to a file in the `@hirosystems/clarinet-sdk` package that does two things:
+    - run `before` hooks to initialize the simnet and `after` hooks to collect costs and coverage reports.
+    - load custom vitest matchers to work with Clarity values (such as `expect(...).toBeUint()`)
+
+  The `getClarinetVitestsArgv()` will parse options passed to the command `vitest run --`
+    - vitest run -- --manifest ./Clarinet.toml  # pass a custom path
+    - vitest run -- --coverage --costs          # collect coverage and cost reports
+*/
+
+export default defineConfig({
+  test: {
+    environment: "clarinet", // use vitest-environment-clarinet
+    pool: "forks",
+    poolOptions: {
+      threads: { singleThread: true },
+      forks: { singleFork: true },
+    },
+    setupFiles: [
+      vitestSetupFilePath,
+      // custom setup files can be added here
+    ],
+    environmentOptions: {
+      clarinet: {
+        ...getClarinetVitestsArgv(),
+        // add or override options
+      },
+    },
+  },
+});
+
+
+
